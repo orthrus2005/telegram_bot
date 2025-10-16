@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from database.repository import UserRepository, CartRepository  # 🆕 ДОБАВИТЬ ЭТИ ИМПОРТЫ
 from database.models import Category, Brand, Product
 from utils.states import OrderStates
 from bot.keyboards.catalog import (
@@ -128,6 +129,32 @@ async def show_product_detail(callback: CallbackQuery, session: AsyncSession):
         product_text,
         reply_markup=get_product_detail_keyboard(product_id, f"brand_{product.brand.id}")
     )
+
+@router.callback_query(F.data.startswith("add_to_cart_"))
+async def add_to_cart(callback: CallbackQuery, session: AsyncSession):
+    """Добавить товар в корзину и показать корзину"""
+    product_id = int(callback.data.split("_")[3])
+    
+    # Проверяем доступность товара
+    from utils.helpers import check_product_availability
+    is_available = await check_product_availability(session, product_id)
+    if not is_available:
+        await callback.answer("❌ Товар временно недоступен", show_alert=True)
+        return
+    
+    user = await UserRepository.get_or_create_user(
+        session=session,
+        telegram_id=callback.from_user.id
+    )
+    
+    # Добавляем в корзину
+    await CartRepository.add_to_cart(session, user.id, product_id)
+    
+    await callback.answer("✅ Товар добавлен в корзину!")
+    
+    # Показываем корзину
+    from bot.handlers.cart import show_cart
+    await show_cart(callback, session)
 
 @router.callback_query(F.data == "back_to_products")
 async def back_to_products(callback: CallbackQuery, session: AsyncSession):

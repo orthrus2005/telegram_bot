@@ -17,6 +17,7 @@ def get_cart_keyboard(cart_items):
     if cart_items:
         keyboard.append([InlineKeyboardButton(text="✅ Оформить заказ", callback_data="checkout")])
     
+    # Кнопка для продолжения покупок
     keyboard.append([InlineKeyboardButton(text="🛍️ Продолжить покупки", callback_data="catalog")])
     keyboard.append([InlineKeyboardButton(text="🔙 На главную", callback_data="main_menu")])
     
@@ -66,7 +67,7 @@ def get_dates_keyboard():
             weekday = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][current_date.weekday()]
             keyboard.append([
                 InlineKeyboardButton(
-                    text=f"{weekday} {date_str}", 
+                    text=f"{weekday} {date_str}",
                     callback_data=f"date_{date_str}"
                 )
             ])
