@@ -147,7 +147,16 @@ async function showOrderDetails(orderId) {
         `;
         
         const data = await apiCall(`/api/order_details/${orderId}`);
-        modalContent.innerHTML = data.html;
+        
+        if (data.error) {
+            modalContent.innerHTML = `
+                <div class="alert alert-danger">
+                    Ошибка: ${data.error}
+                </div>
+            `;
+        } else {
+            modalContent.innerHTML = data.html;
+        }
         
         new bootstrap.Modal(document.getElementById('orderDetailsModal')).show();
     } catch (error) {

@@ -83,7 +83,7 @@
                         </td>
                         <td>{{ order.total_amount }}₽</td>
                         <td>
-                            <span class="badge 
+                            <span class="badge
                                 {% if order.status == 'pending' %}bg-warning
                                 {% elif order.status == 'confirmed' %}bg-info
                                 {% elif order.status == 'completed' %}bg-success
@@ -99,25 +99,34 @@
                         <td>{{ order.created_at | format_datetime }}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
-                                <button type="button" class="btn btn-outline-primary" 
-                                        onclick="showOrderDetails({{ order.id }})">
+                                <button type="button" class="btn btn-outline-primary"
+                                        onclick="showOrderDetails({{ order.id }})"
+                                        title="Просмотреть детали">
                                     <i class="fas fa-eye"></i>
                                 </button>
                                 {% if order.status == 'pending' %}
-                                <button type="button" class="btn btn-outline-success" 
-                                        onclick="updateOrderStatus({{ order.id }}, 'confirmed')">
+                                <button type="button" class="btn btn-outline-success"
+                                        onclick="updateOrderStatus({{ order.id }}, 'confirmed')"
+                                        title="Подтвердить заказ">
                                     <i class="fas fa-check"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-danger" 
-                                        onclick="updateOrderStatus({{ order.id }}, 'cancelled')">
+                                <button type="button" class="btn btn-outline-danger"
+                                        onclick="updateOrderStatus({{ order.id }}, 'cancelled')"
+                                        title="Отменить заказ">
                                     <i class="fas fa-times"></i>
                                 </button>
                                 {% elif order.status == 'confirmed' %}
-                                <button type="button" class="btn btn-outline-success" 
-                                        onclick="updateOrderStatus({{ order.id }}, 'completed')">
+                                <button type="button" class="btn btn-outline-success"
+                                        onclick="updateOrderStatus({{ order.id }}, 'completed')"
+                                        title="Завершить заказ">
                                     <i class="fas fa-check-double"></i>
                                 </button>
                                 {% endif %}
+                                <button type="button" class="btn btn-outline-dark"
+                                        onclick="deleteOrder({{ order.id }})"
+                                        title="Удалить заказ">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -146,6 +155,9 @@
             <div class="modal-body" id="orderDetailsContent">
                 <!-- Детали заказа будут загружены здесь -->
             </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
         </div>
     </div>
 </div>
@@ -153,82 +165,122 @@
 
 {% block scripts %}
 <script>
-function showOrderDetails(orderId) {
-    // Показываем базовую информацию о заказе
-    const orderDetailsContent = document.getElementById('orderDetailsContent');
-    orderDetailsContent.innerHTML = `
-        <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Загрузка...</span>
+// Функция для показа деталей заказа
+async function showOrderDetails(orderId) {
+    try {
+        // Показываем индикатор загрузки
+        const modalContent = document.getElementById('orderDetailsContent');
+        modalContent.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+                <p class="mt-2">Загрузка деталей заказа...</p>
             </div>
-            <p class="mt-2">Загрузка деталей заказа...</p>
-        </div>
-    `;
-    
-    // Находим заказ в таблице для быстрого отображения
-    const orderRow = document.querySelector(`tr:has(strong:contains("#${orderId}"))`);
-    if (orderRow) {
-        const cells = orderRow.querySelectorAll('td');
-        const customer = cells[1].textContent.trim();
-        const amount = cells[2].textContent.trim();
-        const status = cells[3].textContent.trim();
-        const date = cells[4].textContent.trim();
+        `;
+
+        // Устанавливаем ID заказа в заголовок
+        document.getElementById('modalOrderId').textContent = orderId;
         
-        orderDetailsContent.innerHTML = `
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Информация о заказе</h6>
-                    <p><strong>Номер:</strong> #${orderId}</p>
-                    <p><strong>Клиент:</strong> ${customer}</p>
-                    <p><strong>Сумма:</strong> ${amount}</p>
-                    <p><strong>Статус:</strong> ${status}</p>
-                    <p><strong>Дата:</strong> ${date}</p>
+        // Показываем модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
+        modal.show();
+
+        // Загружаем данные
+        const response = await fetch(`/api/order_details/${orderId}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            modalContent.innerHTML = `
+                <div class="alert alert-danger">
+                    Ошибка: ${data.error}
                 </div>
-                <div class="col-md-6">
-                    <h6>Детали загрузятся позже</h6>
-                    <p class="text-muted">Полная информация о товарах в заказе будет доступна после доработки API.</p>
-                </div>
+            `;
+        } else {
+            modalContent.innerHTML = data.html;
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей заказа:', error);
+        const modalContent = document.getElementById('orderDetailsContent');
+        modalContent.innerHTML = `
+            <div class="alert alert-danger">
+                Ошибка при загрузке деталей заказа: ${error.message}
             </div>
         `;
     }
-    
-    document.getElementById('modalOrderId').textContent = orderId;
-    new bootstrap.Modal(document.getElementById('orderDetailsModal')).show();
 }
 
-function updateOrderStatus(orderId, newStatus) {
+// Функция для обновления статуса заказа
+async function updateOrderStatus(orderId, newStatus) {
     const statusNames = {
         'pending': 'ожидание',
-        'confirmed': 'подтвержден', 
+        'confirmed': 'подтвержден',
         'completed': 'выполнен',
         'cancelled': 'отменен'
     };
-    
+
     if (!confirm(`Вы уверены, что хотите изменить статус заказа на "${statusNames[newStatus]}"?`)) {
         return;
     }
 
-    fetch('/api/update_order_status', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            order_id: orderId,
-            status: newStatus
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
+    try {
+        const response = await fetch('/api/update_order_status', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                order_id: orderId,
+                status: newStatus
+            })
+        });
+        
+        const data = await response.json();
+        
         if (data.success) {
+            alert('Статус заказа успешно обновлен');
             location.reload();
         } else {
             alert('Ошибка: ' + data.message);
         }
-    })
-    .catch(error => {
+    } catch (error) {
         alert('Ошибка: ' + error);
-    });
+    }
 }
+
+// Функция для удаления заказа
+async function deleteOrder(orderId) {
+    if (!confirm('Вы уверены, что хотите удалить этот заказ? Это действие нельзя отменить!')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/delete_order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                order_id: orderId
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Заказ успешно удален');
+            location.reload();
+        } else {
+            alert('Ошибка: ' + data.message);
+        }
+    } catch (error) {
+        alert('Ошибка: ' + error);
+    }
+}
+
+// Добавляем глобальные функции для использования в шаблоне
+window.showOrderDetails = showOrderDetails;
+window.updateOrderStatus = updateOrderStatus;
+window.deleteOrder = deleteOrder;
 </script>
 {% endblock %}

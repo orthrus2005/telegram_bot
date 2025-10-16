@@ -5,6 +5,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 import json
+import html
 
 # Добавляем путь к корневой папке проекта
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,12 +36,27 @@ class AdminUser(UserMixin):
 def load_user(user_id):
     return AdminUser(user_id)
 
+# 🆕 ДОБАВЛЕН ФИЛЬТР escapejs
+@app.template_filter('escapejs')
+def escapejs_filter(value):
+    """Экранирование строк для JavaScript"""
+    if value is None:
+        return ''
+    value = str(value)
+    value = value.replace('\\', '\\\\')
+    value = value.replace("'", "\\'")
+    value = value.replace('"', '\\"')
+    value = value.replace('\n', '\\n')
+    value = value.replace('\r', '\\r')
+    value = value.replace('\t', '\\t')
+    return value
+
 # Фильтры для шаблонов
 @app.template_filter('format_date')
 def format_date(value, format='%d.%m.%Y'):
     """Фильтр для форматирования даты"""
     if not value:
-        return "—"
+        return "---"
     
     if isinstance(value, str):
         try:
@@ -101,14 +117,14 @@ def orders():
         # Получаем заказы с информацией о пользователях
         orders_data = session.execute(text("""
             SELECT o.*, u.username, u.first_name, u.last_name, u.telegram_id
-            FROM orders o 
-            LEFT JOIN users u ON o.user_id = u.id 
+            FROM orders o
+            LEFT JOIN users u ON o.user_id = u.id
             ORDER BY o.created_at DESC
         """)).fetchall()
         
         # Получаем статистику
         stats = session.execute(text("""
-            SELECT 
+            SELECT
                 COUNT(*) as total_orders,
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
                 SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed_orders,
@@ -118,8 +134,8 @@ def orders():
             WHERE status != 'cancelled'
         """)).fetchone()
         
-        return render_template('orders.html', 
-                             orders=orders_data, 
+        return render_template('orders.html',
+                             orders=orders_data,
                              stats=stats,
                              current_time=datetime.now())
     finally:
@@ -168,9 +184,9 @@ def products():
         categories = session.execute(text("SELECT * FROM categories WHERE is_active = 1")).fetchall()
         brands = session.execute(text("SELECT * FROM brands WHERE is_active = 1")).fetchall()
         
-        return render_template('products.html', 
-                             products=products, 
-                             categories=categories, 
+        return render_template('products.html',
+                             products=products,
+                             categories=categories,
                              brands=brands)
     finally:
         session.close()
@@ -220,22 +236,21 @@ def update_order_status():
             
             for item in order_items:
                 if new_status == 'completed':
-                    # Списание товара
+                    # Списание товара - просто уменьшаем quantity
                     session.execute(
                         text("""
                             UPDATE products 
-                            SET quantity = quantity - :quantity,
-                                reserved_quantity = reserved_quantity - :quantity
+                            SET quantity = quantity - :quantity 
                             WHERE id = :product_id
                         """),
                         {"quantity": item.quantity, "product_id": item.product_id}
                     )
                 elif new_status == 'cancelled':
-                    # Возврат товара
+                    # Возврат товара - увеличиваем quantity обратно
                     session.execute(
                         text("""
                             UPDATE products 
-                            SET reserved_quantity = reserved_quantity - :quantity
+                            SET quantity = quantity + :quantity 
                             WHERE id = :product_id
                         """),
                         {"quantity": item.quantity, "product_id": item.product_id}
@@ -243,6 +258,138 @@ def update_order_status():
         
         session.commit()
         return jsonify({'success': True, 'message': 'Статус заказа обновлен'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        session.close()
+
+@app.route('/api/order_details/<int:order_id>')
+@login_required
+def order_details(order_id):
+    """Получение деталей заказа"""
+    session = SessionLocal()
+    try:
+        # Получаем информацию о заказе
+        order = session.execute(
+            text("""
+                SELECT o.*, u.username, u.first_name, u.last_name, u.telegram_id
+                FROM orders o
+                LEFT JOIN users u ON o.user_id = u.id
+                WHERE o.id = :order_id
+            """),
+            {"order_id": order_id}
+        ).fetchone()
+        
+        if not order:
+            return jsonify({'error': 'Заказ не найден'})
+        
+        # Получаем товары в заказе
+        order_items = session.execute(
+            text("""
+                SELECT oi.*, p.name as product_name, p.price as current_price
+                FROM order_items oi
+                LEFT JOIN products p ON oi.product_id = p.id
+                WHERE oi.order_id = :order_id
+            """),
+            {"order_id": order_id}
+        ).fetchall()
+        
+        # Формируем HTML для модального окна
+        html_content = f"""
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Информация о заказе</h6>
+                <p><strong>Номер:</strong> #{order.id}</p>
+                <p><strong>Клиент:</strong> {order.first_name or ''} {order.last_name or ''} (@{order.username or 'без username'})</p>
+                <p><strong>Telegram ID:</strong> {order.telegram_id}</p>
+                <p><strong>Статус:</strong> 
+                    <span class="badge {'bg-warning' if order.status == 'pending' else 'bg-info' if order.status == 'confirmed' else 'bg-success' if order.status == 'completed' else 'bg-danger'}">
+                        {'Ожидание' if order.status == 'pending' else 'Подтвержден' if order.status == 'confirmed' else 'Выполнен' if order.status == 'completed' else 'Отменен'}
+                    </span>
+                </p>
+                <p><strong>Сумма:</strong> {order.total_amount}₽</p>
+            </div>
+            <div class="col-md-6">
+                <h6>Доставка</h6>
+                <p><strong>Пункт выдачи:</strong> {order.delivery_address}</p>
+                <p><strong>Дата:</strong> {order.delivery_date}</p>
+                <p><strong>Время:</strong> {order.delivery_time}</p>
+                <p><strong>Оплата:</strong> {'Наличные' if order.payment_method == 'cash' else 'Карта'}</p>
+                <p><strong>Создан:</strong> {order.created_at.strftime('%d.%m.%Y %H:%M') if hasattr(order.created_at, 'strftime') else order.created_at}</p>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-12">
+                <h6>Состав заказа</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Товар</th>
+                                <th>Цена</th>
+                                <th>Количество</th>
+                                <th>Сумма</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        """
+        
+        for item in order_items:
+            item_total = item.product_price * item.quantity
+            html_content += f"""
+                            <tr>
+                                <td>{item.product_name}</td>
+                                <td>{item.product_price}₽</td>
+                                <td>{item.quantity} шт.</td>
+                                <td>{item_total}₽</td>
+                            </tr>
+            """
+        
+        html_content += f"""
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3"><strong>Итого:</strong></td>
+                                <td><strong>{order.total_amount}₽</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        """
+        
+        return jsonify({'html': html_content})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+    finally:
+        session.close()
+
+@app.route('/api/delete_order', methods=['POST'])
+@login_required
+def delete_order():
+    """Удаление заказа"""
+    data = request.json
+    order_id = data.get('order_id')
+    
+    session = SessionLocal()
+    try:
+        # Сначала удаляем связанные записи в order_items
+        session.execute(
+            text("DELETE FROM order_items WHERE order_id = :order_id"),
+            {"order_id": order_id}
+        )
+        
+        # Затем удаляем сам заказ
+        session.execute(
+            text("DELETE FROM orders WHERE id = :order_id"),
+            {"order_id": order_id}
+        )
+        
+        session.commit()
+        return jsonify({'success': True, 'message': 'Заказ удален'})
     except Exception as e:
         session.rollback()
         return jsonify({'success': False, 'message': str(e)})
@@ -285,8 +432,8 @@ def update_product():
     try:
         session.execute(
             text("""
-                UPDATE products 
-                SET name = :name, description = :description, price = :price, 
+                UPDATE products
+                SET name = :name, description = :description, price = :price,
                     quantity = :quantity, category_id = :category_id, brand_id = :brand_id,
                     is_active = :is_active
                 WHERE id = :id
