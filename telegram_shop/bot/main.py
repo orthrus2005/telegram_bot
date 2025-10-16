@@ -1,7 +1,6 @@
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from bot.middlewares.database import DatabaseMiddleware
-
 import config
 from database.engine import init_db
 

@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Бренды - Админ-панель{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-copyright"></i> Управление брендами</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addBrandModal">
+            <i class="fas fa-plus"></i> Добавить бренд
+        </button>
+    </div>
+</div>
+
+<!-- Таблица брендов -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Список брендов</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Название</th>
+                        <th>Описание</th>
+                        <th>Статус</th>
+                        <th>Дата создания</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for brand in brands %}
+                    <tr>
+                        <td>{{ brand.id }}</td>
+                        <td><strong>{{ brand.name }}</strong></td>
+                        <td>{{ brand.description or '—' }}</td>
+                        <td>
+                            <span class="badge {% if brand.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                                {% if brand.is_active %}Активен{% else %}Неактивен{% endif %}
+                            </span>
+                        </td>
+                        <td>{{ brand.created_at | format_date }}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary btn-sm" 
+        onclick="editBrand({{ brand.id }}, '{{ brand.name|escapejs }}', '{{ brand.description|escapejs }}')">
+    <i class="fas fa-edit"></i>
+</button>
+
+<button class="btn btn-outline-danger btn-sm" 
+        onclick="deleteBrand({{ brand.id }}, '{{ brand.name|escapejs }}')">
+    <i class="fas fa-trash"></i>
+</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="fas fa-copyright fa-2x mb-2"></i><br>
+                            Брендов пока нет
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно добавления бренда -->
+<div class="modal fade" id="addBrandModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить бренд</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addBrandForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="brandName" class="form-label">Название бренда</label>
+                        <input type="text" class="form-control" id="brandName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="brandDescription" class="form-label">Описание</label>
+                        <textarea class="form-control" id="brandDescription" name="description" rows="3" placeholder="Необязательное поле"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Добавить бренд</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно редактирования бренда -->
+<div class="modal fade" id="editBrandModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Редактировать бренд</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editBrandForm">
+                <input type="hidden" id="editBrandId" name="id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editBrandName" class="form-label">Название бренда</label>
+                        <input type="text" class="form-control" id="editBrandName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBrandDescription" class="form-label">Описание</label>
+                        <textarea class="form-control" id="editBrandDescription" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Добавление бренда
+document.getElementById('addBrandForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData.entries());
+    
+    fetch('/api/add_brand', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('addBrandModal')).hide();
+            location.reload();
+        } else {
+            alert('Ошибка: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('Ошибка: ' + error);
+    });
+});
+
+// Редактирование бренда
+function editBrand(id, name, description) {
+    document.getElementById('editBrandId').value = id;
+    document.getElementById('editBrandName').value = name;
+    document.getElementById('editBrandDescription').value = description || '';
+    
+    new bootstrap.Modal(document.getElementById('editBrandModal')).show();
+}
+
+document.getElementById('editBrandForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData.entries());
+    
+    fetch('/api/update_brand', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editBrandModal')).hide();
+            location.reload();
+        } else {
+            alert('Ошибка: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('Ошибка: ' + error);
+    });
+});
+
+// Удаление бренда
+function deleteBrand(id, name) {
+    if (!confirm(`Вы уверены, что хотите удалить бренд "${name}"? Все товары этого бренда станут без бренда.`)) {
+        return;
+    }
+    
+    fetch('/api/delete_brand', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: id })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            location.reload();
+        } else {
+            alert('Ошибка: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('Ошибка: ' + error);
+    });
+}
+</script>
+{% endblock %}

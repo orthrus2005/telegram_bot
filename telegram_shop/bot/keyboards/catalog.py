@@ -6,7 +6,7 @@ def get_categories_keyboard(categories):
     for category in categories:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📁 {category.name}", 
+                text=f"📁 {category.name}",
                 callback_data=f"category_{category.id}"
             )
         ])
@@ -20,7 +20,7 @@ def get_brands_keyboard(brands, back_to="catalog"):
     for brand in brands:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"🏷️ {brand.name}", 
+                text=f"🏷️ {brand.name}",
                 callback_data=f"brand_{brand.id}"
             )
         ])
@@ -32,10 +32,17 @@ def get_products_keyboard(products, back_to="brands"):
     """Клавиатура товаров"""
     keyboard = []
     for product in products:
-        status_icon = "✅" if product.quantity > 0 else "❌"
+        # Используем только quantity
+        if product.quantity <= 0:
+            status_icon = "❌"
+        elif product.quantity <= 5:
+            status_icon = "⚠️"
+        else:
+            status_icon = "✅"
+            
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{status_icon} {product.name} - {product.price}₽", 
+                text=f"{status_icon} {product.name} - {product.price}₽",
                 callback_data=f"product_{product.id}"
             )
         ])

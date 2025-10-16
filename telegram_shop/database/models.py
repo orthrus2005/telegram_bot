@@ -36,6 +36,7 @@ class Product(Base):
     description = Column(Text)
     price = Column(Float, nullable=False)
     quantity = Column(Integer, default=0)
+    # 🚫 НЕТ reserved_quantity!
     image_url = Column(String(500))
     is_active = Column(Boolean, default=True)
     
@@ -89,6 +90,7 @@ class Order(Base):
     notes = Column(Text)
     
     created_at = Column(DateTime, default=lambda: datetime.now(pytz.utc))
+    # 🆕 УДАЛИТЬ: updated_at = Column(DateTime, default=lambda: datetime.now(pytz.utc), onupdate=lambda: datetime.now(pytz.utc))
     
     user = relationship("User", back_populates="orders")
     order_items = relationship("OrderItem", back_populates="order")

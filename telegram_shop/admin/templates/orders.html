@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Заказы - Админ-панель{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-shopping-cart"></i> Управление заказами</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i> Обновить
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Статистика -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.total_orders or 0 }}</h5>
+                <p class="card-text">Всего заказов</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.pending_orders or 0 }}</h5>
+                <p class="card-text">Ожидают подтверждения</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.confirmed_orders or 0 }}</h5>
+                <p class="card-text">Подтвержденные</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.completed_orders or 0 }}</h5>
+                <p class="card-text">Выполненные</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Таблица заказов -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Список заказов</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Клиент</th>
+                        <th>Сумма</th>
+                        <th>Статус</th>
+                        <th>Дата создания</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td><strong>#{{ order.id }}</strong></td>
+                        <td>
+                            {% if order.first_name or order.last_name %}
+                                {{ order.first_name }} {{ order.last_name }}
+                            {% elif order.username %}
+                                @{{ order.username }}
+                            {% else %}
+                                ID: {{ order.telegram_id }}
+                            {% endif %}
+                        </td>
+                        <td>{{ order.total_amount }}₽</td>
+                        <td>
+                            <span class="badge 
+                                {% if order.status == 'pending' %}bg-warning
+                                {% elif order.status == 'confirmed' %}bg-info
+                                {% elif order.status == 'completed' %}bg-success
+                                {% elif order.status == 'cancelled' %}bg-danger
+                                {% else %}bg-secondary{% endif %}">
+                                {% if order.status == 'pending' %}Ожидание
+                                {% elif order.status == 'confirmed' %}Подтвержден
+                                {% elif order.status == 'completed' %}Выполнен
+                                {% elif order.status == 'cancelled' %}Отменен
+                                {% else %}{{ order.status }}{% endif %}
+                            </span>
+                        </td>
+                        <td>{{ order.created_at | format_datetime }}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        onclick="showOrderDetails({{ order.id }})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                {% if order.status == 'pending' %}
+                                <button type="button" class="btn btn-outline-success" 
+                                        onclick="updateOrderStatus({{ order.id }}, 'confirmed')">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" 
+                                        onclick="updateOrderStatus({{ order.id }}, 'cancelled')">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                {% elif order.status == 'confirmed' %}
+                                <button type="button" class="btn btn-outline-success" 
+                                        onclick="updateOrderStatus({{ order.id }}, 'completed')">
+                                    <i class="fas fa-check-double"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                            Заказов пока нет
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно деталей заказа -->
+<div class="modal fade" id="orderDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Детали заказа #<span id="modalOrderId"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="orderDetailsContent">
+                <!-- Детали заказа будут загружены здесь -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showOrderDetails(orderId) {
+    // Показываем базовую информацию о заказе
+    const orderDetailsContent = document.getElementById('orderDetailsContent');
+    orderDetailsContent.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <p class="mt-2">Загрузка деталей заказа...</p>
+        </div>
+    `;
+    
+    // Находим заказ в таблице для быстрого отображения
+    const orderRow = document.querySelector(`tr:has(strong:contains("#${orderId}"))`);
+    if (orderRow) {
+        const cells = orderRow.querySelectorAll('td');
+        const customer = cells[1].textContent.trim();
+        const amount = cells[2].textContent.trim();
+        const status = cells[3].textContent.trim();
+        const date = cells[4].textContent.trim();
+        
+        orderDetailsContent.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Информация о заказе</h6>
+                    <p><strong>Номер:</strong> #${orderId}</p>
+                    <p><strong>Клиент:</strong> ${customer}</p>
+                    <p><strong>Сумма:</strong> ${amount}</p>
+                    <p><strong>Статус:</strong> ${status}</p>
+                    <p><strong>Дата:</strong> ${date}</p>
+                </div>
+                <div class="col-md-6">
+                    <h6>Детали загрузятся позже</h6>
+                    <p class="text-muted">Полная информация о товарах в заказе будет доступна после доработки API.</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    document.getElementById('modalOrderId').textContent = orderId;
+    new bootstrap.Modal(document.getElementById('orderDetailsModal')).show();
+}
+
+function updateOrderStatus(orderId, newStatus) {
+    const statusNames = {
+        'pending': 'ожидание',
+        'confirmed': 'подтвержден', 
+        'completed': 'выполнен',
+        'cancelled': 'отменен'
+    };
+    
+    if (!confirm(`Вы уверены, что хотите изменить статус заказа на "${statusNames[newStatus]}"?`)) {
+        return;
+    }
+
+    fetch('/api/update_order_status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            order_id: orderId,
+            status: newStatus
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Ошибка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('Ошибка: ' + error);
+    });
+}
+</script>
+{% endblock %}

@@ -4,11 +4,10 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
 from database.models import Category, Brand, Product
 from utils.states import OrderStates
 from bot.keyboards.catalog import (
-    get_categories_keyboard, get_brands_keyboard, 
+    get_categories_keyboard, get_brands_keyboard,
     get_products_keyboard, get_product_detail_keyboard
 )
 from bot.keyboards.main_menu import get_main_menu
@@ -43,18 +42,21 @@ async def show_brands(callback: CallbackQuery, session: AsyncSession, state: FSM
     """Показать бренды по категории"""
     category_id = int(callback.data.split("_")[1])
     
-    # Получаем бренды для этой категории
+    # 🆕 ИСПРАВЛЕННЫЙ ЗАПРОС: получаем бренды, у которых есть товары в этой категории
     result = await session.scalars(
         select(Brand)
-        .join(Brand.products)
+        .join(Product, Brand.id == Product.brand_id)
         .where(Product.category_id == category_id)
+        .where(Product.is_active == True)
         .where(Brand.is_active == True)
         .distinct()
     )
     brands = result.all()
     
     if not brands:
-        await callback.answer("В этой категории пока нет товаров", show_alert=True)
+        await callback.answer("❌ В этой категории пока нет товаров", show_alert=True)
+        # Возвращаемся к категориям
+        await show_categories(callback, session, state)
         return
     
     await callback.message.edit_text(
@@ -68,17 +70,23 @@ async def show_products(callback: CallbackQuery, session: AsyncSession, state: F
     """Показать товары бренда"""
     brand_id = int(callback.data.split("_")[1])
     
-    # Получаем товары бренда
+    # Получаем данные из state чтобы узнать category_id
+    state_data = await state.get_data()
+    
+    # 🆕 ИСПРАВЛЕННЫЙ ЗАПРОС: получаем товары бренда в текущей категории
     result = await session.scalars(
         select(Product)
         .where(Product.brand_id == brand_id)
         .where(Product.is_active == True)
+        .where(Product.quantity > 0)
         .order_by(Product.name)
     )
     products = result.all()
     
     if not products:
-        await callback.answer("У этого производителя пока нет товаров", show_alert=True)
+        await callback.answer("❌ У этого производителя пока нет товаров в наличии", show_alert=True)
+        # Возвращаемся к брендам
+        await show_categories(callback, session, state)
         return
     
     await callback.message.edit_text(
@@ -102,7 +110,7 @@ async def show_product_detail(callback: CallbackQuery, session: AsyncSession):
     product = result.scalar_one_or_none()
     
     if not product:
-        await callback.answer("Товар не найден", show_alert=True)
+        await callback.answer("❌ Товар не найден", show_alert=True)
         return
     
     status_text = await get_product_status_text(product)
@@ -111,7 +119,7 @@ async def show_product_detail(callback: CallbackQuery, session: AsyncSession):
         f"🛍️ {product.name}\n"
         f"🏷️ {product.brand.name}\n"
         f"📁 {product.category.name}\n\n"
-        f"{product.description}\n\n"
+        f"{product.description or 'Описание отсутствует'}\n\n"
         f"💵 Цена: {product.price}₽\n"
         f"📦 {status_text}"
     )

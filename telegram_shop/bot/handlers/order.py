@@ -1,20 +1,22 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from database.models import Order, OrderItem, User
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload  # 🆕 ДОБАВИТЬ ЭТОТ ИМПОРТ
+from database.models import Order, OrderItem, User, Product, CartItem
 from database.repository import UserRepository, CartRepository
 from utils.states import OrderStates
 from bot.keyboards.cart import (
-    get_checkout_confirm_keyboard, 
-    get_delivery_method_keyboard, 
+    get_checkout_confirm_keyboard,
+    get_delivery_method_keyboard,
     get_payment_method_keyboard,
     get_dates_keyboard,
     get_back_to_checkout_keyboard
 )
 from bot.keyboards.main_menu import get_main_menu
+import config
 
 router = Router()
 
@@ -59,7 +61,7 @@ async def process_date(callback: CallbackQuery, state: FSMContext):
     await state.update_data(delivery_time="16:00-18:00")
     
     await callback.message.edit_text(
-        "💳 Выберите способ оплаты:",
+        "💳 Выберите способ оплата:",
         reply_markup=get_payment_method_keyboard()
     )
     await state.set_state(OrderStates.checkout_payment)
@@ -146,17 +148,48 @@ async def show_order_confirmation(callback: CallbackQuery, state: FSMContext, se
             reply_markup=get_checkout_confirm_keyboard()
         )
 
+async def send_admin_notification(bot: Bot, order: Order, user: User, order_items_text: str):
+    """Отправка уведомления администратору"""
+    admin_message = (
+        "🆕 НОВЫЙ ЗАКАЗ!\n\n"
+        f"📦 Номер заказа: #{order.id}\n"
+        f"👤 Клиент: {user.first_name or ''} {user.last_name or ''} (@{user.username or 'без username'})\n"
+        f"📞 Telegram ID: {user.telegram_id}\n"
+        f"💵 Сумма: {order.total_amount}₽\n"
+        f"📍 Пункт выдачи: {order.delivery_address}\n"
+        f"📅 Дата: {order.delivery_date}\n"
+        f"⏰ Время: {order.delivery_time}\n"
+        f"💳 Оплата: {'Наличные' if order.payment_method == 'cash' else 'Карта'}\n\n"
+        f"🛒 Состав заказа:\n{order_items_text}\n\n"
+        "⚡ Перейдите в админ-панель для управления заказом"
+    )
+    
+    try:
+        await bot.send_message(chat_id=config.ADMIN_ID, text=admin_message)
+    except Exception as e:
+        print(f"❌ Ошибка отправки уведомления админу: {e}")
+
 @router.callback_query(F.data == "confirm_order")
-async def confirm_order(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+async def confirm_order(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot):
     """Подтверждение и создание заказа"""
     try:
         order_data = await state.get_data()
         
         user = await UserRepository.get_or_create_user(
             session=session,
-            telegram_id=callback.from_user.id
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name
         )
-        cart_items = await CartRepository.get_cart_items(session, user.id)
+        
+        # Получаем cart_items с продуктами
+        stmt = select(CartItem).options(
+            selectinload(CartItem.product)
+        ).where(CartItem.user_id == user.id)
+        
+        result = await session.execute(stmt)
+        cart_items = result.scalars().all()
         
         if not cart_items:
             await callback.answer("❌ Корзина пуста!", show_alert=True)
@@ -165,7 +198,7 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext, session: Asy
         # Рассчитываем итоговую сумму
         total_amount = sum(item.product.price * item.quantity for item in cart_items)
         
-        # Создаем заказ
+        # Создаем заказ (БЕЗ updated_at)
         order = Order(
             user_id=user.id,
             total_amount=total_amount,
@@ -175,13 +208,20 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext, session: Asy
             delivery_date=order_data['delivery_date'],
             delivery_time=order_data['delivery_time'],
             payment_method=order_data['payment_method'],
-            notes=order_data.get('notes', '')
+            notes=order_data.get('notes', ''),
+            status='pending'
         )
         session.add(order)
-        await session.commit()
+        await session.flush()  # Используем flush вместо commit чтобы получить ID
         
-        # Добавляем товары в заказ
+        # Формируем текст товаров для уведомления
+        order_items_text = ""
         for cart_item in cart_items:
+            item_total = cart_item.product.price * cart_item.quantity
+            order_items_text += f"   • {cart_item.product.name}\n"
+            order_items_text += f"     {cart_item.quantity} шт. × {cart_item.product.price}₽ = {item_total}₽\n"
+            
+            # Добавляем товары в заказ
             order_item = OrderItem(
                 order_id=order.id,
                 product_id=cart_item.product.id,
@@ -190,13 +230,22 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext, session: Asy
                 quantity=cart_item.quantity
             )
             session.add(order_item)
+            
+            # Обновляем количество товара
+            product = await session.get(Product, cart_item.product.id)
+            if product:
+                product.quantity = max(0, product.quantity - cart_item.quantity)
         
         # Очищаем корзину
         for cart_item in cart_items:
             await session.delete(cart_item)
         
-        await session.commit()
+        await session.commit()  # Один коммит в конце
+        
         await state.clear()
+        
+        # Отправляем уведомление администратору
+        await send_admin_notification(bot, order, user, order_items_text)
         
         await callback.message.edit_text(
             "✅ Заказ успешно оформлен!\n\n"
@@ -211,6 +260,8 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext, session: Asy
         )
         
     except Exception as e:
+        print(f"❌ Ошибка при создании заказа: {e}")
+        await session.rollback()  # Откатываем изменения при ошибке
         await callback.message.edit_text(
             "❌ Произошла ошибка при оформлении заказа. Попробуйте позже.",
             reply_markup=get_main_menu()

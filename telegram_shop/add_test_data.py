@@ -36,15 +36,17 @@ async def add_test_data():
                 description="Одноразовая электронная сигарета, 1200 затяжек\nВкус: Мята с ментолом\nКрепость: 20mg",
                 price=1200,
                 quantity=10,
+                reserved_quantity=0,  # 🆕 ДОБАВЛЕНО
                 category_id=1,
                 brand_id=1
             ),
             Product(
-                name="Puff Bar Plus 800", 
+                name="Puff Bar Plus 800",
                 description="Стильная одноразка, 800 затяжек\nВкус: Клубника-банан\nКрепость: 15mg",
                 price=900,
                 quantity=5,
-                category_id=1, 
+                reserved_quantity=0,  # 🆕 ДОБАВЛЕНО
+                category_id=1,
                 brand_id=2
             ),
             Product(
@@ -52,6 +54,7 @@ async def add_test_data():
                 description="Легендарная одноразка, 5000 затяжек\nВкус: Голубика-малина\nКрепость: 20mg",
                 price=2500,
                 quantity=3,
+                reserved_quantity=0,  # 🆕 ДОБАВЛЕНО
                 category_id=1,
                 brand_id=4
             ),
@@ -62,6 +65,7 @@ async def add_test_data():
                 description="Сменный испаритель для pod-систем\nСопротивление: 0.8 Ом\nСовместимость: XROS серия",
                 price=300,
                 quantity=20,
+                reserved_quantity=0,  # 🆕 ДОБАВЛЕНО
                 category_id=2,
                 brand_id=3
             ),
@@ -70,6 +74,7 @@ async def add_test_data():
                 description="Сменные картриджи для HQD\nОбъем: 2ml\nКрепость: 20mg",
                 price=400,
                 quantity=15,
+                reserved_quantity=0,  # 🆕 ДОБАВЛЕНО
                 category_id=2,
                 brand_id=1
             ),
@@ -80,6 +85,7 @@ async def add_test_data():
                 description="Многоразовая pod-система\nАккумулятор: 1000mAh\nТип зарядки: USB-C",
                 price=3500,
                 quantity=8,
+                reserved_quantity=0,  # 🆕 ДОБАВЛЕНО
                 category_id=3,
                 brand_id=3
             )

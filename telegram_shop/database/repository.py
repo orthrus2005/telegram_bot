@@ -1,10 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
-from database.models import User, Product, Category, Brand, CartItem
+from sqlalchemy import select, update, and_
+from sqlalchemy.orm import selectinload  # 🆕 ДОБАВИТЬ ЭТОТ ИМПОРТ
+from database.models import User, Product, Category, Brand, CartItem, Order, OrderItem
 
 class UserRepository:
     @staticmethod
-    async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str = None, 
+    async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str = None,
                                first_name: str = None, last_name: str = None) -> User:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
         if not user:
@@ -49,7 +50,6 @@ class ProductRepository:
 class CartRepository:
     @staticmethod
     async def add_to_cart(session: AsyncSession, user_id: int, product_id: int, quantity: int = 1):
-        # Проверяем есть ли уже товар в корзине
         existing_item = await session.scalar(
             select(CartItem)
             .where(CartItem.user_id == user_id)
@@ -63,12 +63,30 @@ class CartRepository:
             session.add(cart_item)
         
         await session.commit()
-    
+
     @staticmethod
     async def get_cart_items(session: AsyncSession, user_id: int) -> list[CartItem]:
-        result = await session.scalars(
-            select(CartItem)
-            .where(CartItem.user_id == user_id)
-            .join(CartItem.product)
-        )
+        from sqlalchemy.orm import selectinload
+        
+        stmt = select(CartItem).options(
+            selectinload(CartItem.product)
+        ).where(CartItem.user_id == user_id)
+        
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+class OrderRepository:
+    @staticmethod
+    async def get_orders(session: AsyncSession, status: str = None) -> list[Order]:
+        query = select(Order).join(Order.user)
+        if status:
+            query = query.where(Order.status == status)
+        result = await session.scalars(query.order_by(Order.created_at.desc()))
         return result.all()
+
+    @staticmethod
+    async def update_order_status(session: AsyncSession, order_id: int, new_status: str):
+        order = await session.get(Order, order_id)
+        if order:
+            order.status = new_status
+            await session.commit()

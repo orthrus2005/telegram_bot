@@ -16,3 +16,8 @@ async def get_product_status_text(product: Product) -> str:
         return f"⚠️ Осталось мало ({product.quantity} шт)"
     else:
         return f"✅ В наличии ({product.quantity} шт)"
+
+# 🆕 ИСПРАВЛЕННАЯ ФУНКЦИЯ (без reserved_quantity)
+async def get_available_quantity(product: Product) -> int:
+    """Возвращает доступное количество товара"""
+    return max(0, product.quantity)
